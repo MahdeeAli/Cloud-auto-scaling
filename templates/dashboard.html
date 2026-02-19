@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Autoscaler Mission Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --accent: #3b82f6; --success: #22c55e; --danger: #ef4444; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 20px; }
+        .h-title { font-size: 24px; font-weight: bold; color: var(--accent); }
+        .status-badge { background: var(--success); color: black; padding: 5px 15px; border-radius: 20px; font-weight: bold; font-size: 14px; }
+        .status-badge.error { background: var(--danger); color: white; }
+
+        /* SCENARIO BUTTONS */
+        .scenario-container { display: flex; gap: 10px; margin-bottom: 20px; }
+        .scenario-btn { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; flex: 1; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; }
+        .scenario-btn:hover { background: #334155; transform: translateY(-2px); border-color: var(--accent); }
+
+        .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
+        .card { background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); }
+        .card h3 { margin: 0 0 10px 0; color: #94a3b8; font-size: 14px; text-transform: uppercase; }
+        .big-number { font-size: 36px; font-weight: bold; }
+        .sub-text { font-size: 14px; color: #64748b; display: flex; justify-content: space-between; align-items: center; }
+
+        .server-container { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; }
+        .server-box { width: 30px; height: 30px; background: #334155; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; }
+        .server-box.active { background: var(--success); box-shadow: 0 0 10px var(--success); }
+
+        /* 👇 LAYOUT UPDATE: STACKED instead of GRID */
+        .bottom-section { display: flex; flex-direction: column; gap: 20px; }
+        
+        /* Wider Chart */
+        .chart-container { background: var(--card); padding: 20px; border-radius: 12px; height: 350px; position: relative; width: 100%; box-sizing: border-box; }
+        
+        /* Wider Log Terminal */
+        .log-container { background: #000; padding: 15px; border-radius: 12px; height: 180px; overflow-y: auto; font-family: 'Courier New', monospace; border: 1px solid #334155; width: 100%; box-sizing: border-box; }
+        
+        .log-entry { font-size: 13px; margin-bottom: 5px; color: #22c55e; border-bottom: 1px solid #1e293b; padding-bottom: 2px; }
+        .log-entry.warning { color: #facc15; }
+        .log-entry.error { color: #ef4444; font-weight: bold; }
+
+        .btn-mini { background: #334155; border: 1px solid #475569; color: #94a3b8; cursor: pointer; border-radius: 4px; padding: 2px 8px; font-size: 10px; transition: 0.2s; }
+        .btn-mini:hover { background: var(--accent); color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="h-title">⚡ AI AUTOSCALER <span style="color:white">CONTROL</span></div>
+        <div class="status-badge" id="sys-status">SYSTEM ACTIVE</div>
+    </div>
+
+    <div class="scenario-container">
+        <button onclick="setScenario('startup')" class="scenario-btn">🚀 Startup Mode</button>
+        <button onclick="setScenario('enterprise')" class="scenario-btn">🏢 Enterprise Mode</button>
+        <button onclick="setScenario('defense')" class="scenario-btn">🛡️ Defense Mode</button>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Live Traffic</h3>
+            <div class="big-number" id="traffic">0</div>
+            <div class="sub-text">Requests / sec</div>
+        </div>
+        <div class="card">
+            <h3>AI Prediction</h3>
+            <div class="big-number" id="prediction" style="color: var(--accent)">0</div>
+            <div class="sub-text">Forecasted Load</div>
+        </div>
+        <div class="card">
+            <div style="display: flex; justify-content: space-between;">
+                <h3>Active Nodes</h3>
+                <div style="text-align: right;">
+                    <span id="cap-display" style="font-size: 10px; color: #94a3b8; display:block;">1 Srv = 20 Users</span>
+                    <input type="range" min="10" max="100" value="20" id="sensitivity-slider" onchange="updateSensitivity()" style="width: 80px; height: 10px; accent-color: var(--accent);">
+                </div>
+            </div>
+            <div class="big-number" id="scale">1</div>
+            <div class="server-container" id="server-viz"></div>
+        </div>
+        <div class="card">
+            <div style="display: flex; justify-content: space-between;"><h3>Cloud Cost</h3> <button onclick="resetBudget()" class="btn-mini">RESET</button></div>
+            <div class="big-number" id="cost" style="color: var(--success)">$0.00</div>
+            <div class="sub-text"><span id="limit-text">Limit: $50</span> <button onclick="changeLimit()" class="btn-mini">EDIT</button></div>
+        </div>
+    </div>
+
+    <div class="bottom-section">
+        <div class="chart-container">
+            <canvas id="trafficChart"></canvas>
+        </div>
+        <div class="log-container" id="log-box">
+            <div class="log-entry">Waiting for system logs...</div>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('trafficChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Traffic', borderColor: '#22c55e', data: [], tension: 0.4 }, { label: 'Prediction', borderColor: '#3b82f6', borderDash: [5, 5], data: [], tension: 0.4 }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { x: { display: false } } }
+        });
+
+        function updateDashboard() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('traffic').innerText = Math.round(data.traffic);
+                    document.getElementById('prediction').innerText = Math.round(data.prediction);
+                    document.getElementById('scale').innerText = data.scale;
+                    
+                    const costElem = document.getElementById('cost');
+                    costElem.innerText = "$" + data.cost.toFixed(2);
+                    document.getElementById('limit-text').innerText = "Limit: $" + data.budget_limit.toFixed(2);
+                    
+                    const badge = document.getElementById('sys-status');
+                    if (data.budget_status === "EXCEEDED") {
+                        badge.innerText = "ECONOMY MODE"; badge.className = "status-badge error"; costElem.style.color = "#ef4444";
+                    } else {
+                        badge.innerText = "SYSTEM ACTIVE"; badge.className = "status-badge"; costElem.style.color = "#22c55e";
+                    }
+
+                    const container = document.getElementById('server-viz');
+                    container.innerHTML = '';
+                    for (let i = 0; i < 10; i++) {
+                        container.innerHTML += `<div class="server-box ${i < data.scale ? 'active' : ''}">💻</div>`;
+                    }
+
+                    const now = new Date().toLocaleTimeString();
+                    if (chart.data.labels.length > 20) { chart.data.labels.shift(); chart.data.datasets.forEach(d => d.data.shift()); }
+                    chart.data.labels.push(now);
+                    chart.data.datasets[0].data.push(data.traffic);
+                    chart.data.datasets[1].data.push(data.prediction);
+                    chart.update();
+
+                    const logBox = document.getElementById('log-box');
+                    logBox.innerHTML = ''; 
+                    data.logs.forEach(log => {
+                        let cls = 'log-entry';
+                        if (log.includes('ECONOMY')) cls += ' warning';
+                        if (log.includes('Scaling')) cls += ' error';
+                        logBox.innerHTML += `<div class="${cls}">${log}</div>`;
+                    });
+                });
+        }
+
+        function resetBudget() { fetch('/api/reset_budget', { method: 'POST' }); }
+        
+        function changeLimit() { 
+            let l = prompt("New Limit ($):", "100"); 
+            if(l) fetch('/api/set_budget', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ limit: l }) }); 
+        }
+
+        function updateSensitivity() {
+            let v = document.getElementById('sensitivity-slider').value;
+            document.getElementById('cap-display').innerText = "1 Srv = " + v + " Users";
+            fetch('/api/set_sensitivity', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ capacity: v }) });
+        }
+
+        function setScenario(mode) {
+            let budget = 50, capacity = 20;
+            if (mode === 'startup') { budget = 20; capacity = 50; }
+            else if (mode === 'enterprise') { budget = 100; capacity = 20; }
+            else if (mode === 'defense') { budget = 500; capacity = 10; }
+
+            fetch('/api/set_budget', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ limit: budget }) });
+            fetch('/api/set_sensitivity', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ capacity: capacity }) });
+            document.getElementById('sensitivity-slider').value = capacity;
+            document.getElementById('cap-display').innerText = "1 Srv = " + capacity + " Users";
+        }
+
+        setInterval(updateDashboard, 1000);
+    </script>
+</body>
+</html>
