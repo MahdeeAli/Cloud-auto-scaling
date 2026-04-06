@@ -20,10 +20,10 @@ pipeline {
             steps {
                 sshagent(credentials: ['project-server-key']) {
                     
-                    // 1. Copy files
+                    // 1. Copy the files over
                     sh "scp -o StrictHostKeyChecking=no -r ./* ${TARGET_USER}@${PROJECT_SERVER_IP}:${APP_DIR}/"
 
-                    // 2. SSH and run commands
+                    // 2. Setup Docker and Kill the old Brain (Standard SSH)
                     sh """
                     ssh -o StrictHostKeyChecking=no ${TARGET_USER}@${PROJECT_SERVER_IP} '
                         cd ${APP_DIR}
@@ -35,17 +35,19 @@ pipeline {
                         sudo docker compose down || true
                         sudo docker compose up -d --build --scale web_app=1
                         
-                        echo "🧠 Launching AI Brain in Background..."
-                        # Use sudo to ensure we can kill ANY old instance
-                        sudo pkill -f "python3 brain.py" || true
-                        
-                        # Use < /dev/null to cleanly detach the SSH session
+                        echo "🧹 Wiping out old AI Brain..."
+                        # Adding -9 forces immediate termination
+                        sudo pkill -9 -f "python3 brain.py" || true
+                    '
+                    """
+
+                    // 3. Launch the new Brain (Fire-and-Forget SSH)
+                    // The '-f' flag forces SSH to go to the background and disconnect immediately
+                    sh """
+                    ssh -f -o StrictHostKeyChecking=no ${TARGET_USER}@${PROJECT_SERVER_IP} '
+                        cd ${APP_DIR}
+                        echo "🧠 Launching AI Brain..."
                         nohup python3 brain.py > brain.log 2>&1 < /dev/null &
-                        
-                        # Pause for 2 seconds to let the process detach before closing SSH
-                        sleep 2
-                        
-                        echo "✅ System is Live!"
                     '
                     """
                 }
