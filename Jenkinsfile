@@ -18,13 +18,12 @@ pipeline {
 
         stage('Deploy to Remote Server') {
             steps {
-                // The sshagent block uses the PEM key you uploaded to Jenkins
                 sshagent(credentials: ['project-server-key']) {
                     
-                    // 1. Copy all project files from Jenkins to the Project Server
+                    // 1. Copy files
                     sh "scp -o StrictHostKeyChecking=no -r ./* ${TARGET_USER}@${PROJECT_SERVER_IP}:${APP_DIR}/"
 
-                    // 2. SSH into the Project Server to run the deployment commands
+                    // 2. SSH and run commands
                     sh """
                     ssh -o StrictHostKeyChecking=no ${TARGET_USER}@${PROJECT_SERVER_IP} '
                         cd ${APP_DIR}
@@ -33,15 +32,20 @@ pipeline {
                         pip3 install -r requirements.txt
                         
                         echo "🐳 Booting Docker Infrastructure..."
-                        docker compose down || true
-                        docker compose up -d --build --scale web_app=1
+                        sudo docker compose down || true
+                        sudo docker compose up -d --build --scale web_app=1
                         
                         echo "🧠 Launching AI Brain in Background..."
-                        # Kill any old instances of the brain to prevent conflicts
-                        pkill -f "python3 brain.py" || true
+                        # Use sudo to ensure we can kill ANY old instance
+                        sudo pkill -f "python3 brain.py" || true
                         
-                        # Run the new brain using nohup so it survives the SSH disconnect
-                        nohup python3 brain.py > brain.log 2>&1 &
+                        # Use < /dev/null to cleanly detach the SSH session
+                        nohup python3 brain.py > brain.log 2>&1 < /dev/null &
+                        
+                        # Pause for 2 seconds to let the process detach before closing SSH
+                        sleep 2
+                        
+                        echo "✅ System is Live!"
                     '
                     """
                 }
