@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // REPLACE THIS with the Private IP (if in the same VPC) or Public IP of your Project Server
-        PROJECT_SERVER_IP = "10.0.0.X" 
+        PROJECT_SERVER_IP = "35.175.201.135" 
         TARGET_USER = "ec2-user"
         APP_DIR = "/home/ec2-user/Cloud-auto-scaling"
     }
