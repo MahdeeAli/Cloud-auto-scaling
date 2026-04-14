@@ -65,10 +65,3 @@ metadata:
   namespace: webapps
   annotations:
     kubernetes.io/service-account.name: jenkins
-	
-
-
-
-	
-
-	
